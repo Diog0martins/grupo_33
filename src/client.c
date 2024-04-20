@@ -8,11 +8,25 @@
 #include "../include/parser.h"
 #include "../include/defs.h"
 
+void printCmd2(const Cmd *cmd) {
+    printf("PID: %d\n", cmd->pid);
+    printf("Time: %d\n", cmd->time);
+    printf("Command: %s\n", cmd->cmd);
+    printf("Flag: %s\n", cmd->flag);
+    printf("Arguments: %s\n", cmd->args);
+}
 
 int main (int argc, char* argv[]){
 
+    printf("Número de argumentos: %d\n", argc);
+    printf("Argumentos:\n");
+    for (int i = 0; i < argc; ++i) {
+        printf("argv[%d]: %s\n",i, argv[i]);
+    }
+
 	//Abrir o FIFO que envia pedidos
 	int fd = open("server", O_WRONLY);
+    
 
 	if (fd == -1){
         perror("Failed to open servidor FIFO");
@@ -22,6 +36,8 @@ int main (int argc, char* argv[]){
 	int pid = getpid();
 	char pid_name[10];
     sprintf(pid_name, "%d", pid);
+    
+    mkfifo(pid_name, 0600);
 
 	// Verificar se foi passado pelo menos um argumento
     if (argc < 2) {
@@ -29,78 +45,34 @@ int main (int argc, char* argv[]){
         return 1; // Retornar 1 indica que houve um erro
     }
 
-    // Procurar pela flag "-u"
-    int i;
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-u") == 0) {
-            break; // Encontramos a flag "-u", sair do loop
-        }
-    }
+	Cmd message;
+    message.pid = pid;
+    strcpy(message.cmd, argv[1]);
+    
+    message.time = atoi(argv[2]);
+    
+    strncpy(message.flag, argv[3], sizeof(message.flag));
+    
+    strcpy(message.args, argv[4]);
 
-    // Se não encontramos a flag "-u"
-    if (i == argc) {
-        printf("Flag '-u' not found.\n");
-        return 1; // Retornar 1 indica que houve um erro
-    }
 
-    // Verificar se há argumentos após a flag "-u"
-    if (i + 1 >= argc) {
-        printf("No command specified after '-u'.\n");
-        return 1; // Retornar 1 indica que houve um erro
-    }
+    printCmd2(&message);
 
-    // Construir o comando a partir dos argumentos após a flag "-u"
-    char cmd[300] = "";
-    for (int j = i + 1; j < argc; j++) {
-        strcat(cmd, argv[j]);
-        strcat(cmd, " ");
-    }
+    // Send the serialized message to the server
+    write(fd, &message, sizeof(Cmd));
 
-    // Remover o último espaço
-    cmd[strlen(cmd) - 1] = '\0';
+    close(fd);
 
-    // Chamar a função parser com o comando construído
-    char** args = parser(cmd);
+    int tag;
+    int answer_fd = open(pid_name, O_RDONLY);
+    int n = read(answer_fd, &tag, sizeof(int));
 
-    // Printar os argumentos parseados
-    for (int k = 0; args[k] != NULL; k++) {
-        printf("Argument %d: %s\n", k, args[k]);
-    }
+    char tag_name[10];
+    sprintf(tag_name, "%d", tag);
+    write(0, &tag_name, n);
 
-	// Criar mensagem a ser enviada
-	Cmd* message = malloc(sizeof(Cmd));
-	message->cmds = args;
-	message->pid = pid_name;
-	message->time = atoi(argv[1]);
-
-	//Enviar a mensagem para o servidor
-	write(fd, message, sizeof(Cmd));
-
-    // Libertar a memória alocada para os argumentos
-    free(args);
+    char newline = '\n';
+    write(0, &newline, 1);
 
     return 0;
 }
-
-
-/* 	
-	//-----CRIAR PIPE DE RECEÇÃO-----//
-
-	char pipe_name[10];
-    sprintf(pipe_name, "%d", pid);
-	mkfifo(pipe_name, 0600);
-
-	write(fd, MSG, sizeof(MSG));
-
-	char pid_n[10]; 
-	sprintf(pid_n, "%d", pid);
-	
-
-	int fd_2 = open(pid_n, O_RDONLY);
-	
-	/* 
-	Msg* buff = malloc(sizeof(Msg)); 
-	
-	read(fd_2, buff, sizeof(Msg));
-
- */

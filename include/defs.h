@@ -4,7 +4,9 @@
 */
 
 typedef struct command{
-    char* pid;
+    int pid;
     int time;
-    char** cmds;
+    char cmd[10];
+    char flag[3];
+    char args[300];
 } Cmd;
