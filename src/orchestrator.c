@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h> // for strcpy
 #include <errno.h> // for errno
+#include <sys/wait.h>
 #include "../include/defs.h"
 
 void printCmd(const Cmd *cmd) {
@@ -36,8 +37,8 @@ void execute(char cmds[], int id){
         if (fork()==0){
 
             if (dup2(fd, 1) == -1){
-            perror("dup2");
-            exit(1);
+                perror("dup2");
+                exit(1);
             }
 
             execvp(args[0], args);
@@ -46,6 +47,97 @@ void execute(char cmds[], int id){
         }
    
 }
+
+void execute_chain (char cmds[] , int id) {
+
+    char * commands [100];
+    int num_commands = 0;
+
+    while((commands[num_commands] = strsep(&cmds, "|")) != NULL) {
+        num_commands++;
+    }
+            
+    for (int m = 0; m < num_commands; m++){
+        
+        if (commands[m][0] == ' '){
+            for (int n = 0; n < strlen(commands[m]); n++){
+                commands[m][n] = commands[m][n+1];
+            }
+        }
+    }
+
+    int fd[2];
+    int input_fd = 0;
+
+    for (int i = 0; i < num_commands; i++) {
+        if (i < num_commands-1) {
+            // Criar um pipe para o próximo comando
+            if (pipe(fd) == -1) {
+                perror("pipe");
+                exit(1);
+            }
+        }
+
+        // Fork para executar o comando
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            exit(1);
+        }
+
+        if (pid == 0) { // Processo filho
+            if (input_fd != -1) {
+                // Redirecionar a entrada para input_fd
+                if (dup2(input_fd, 0) == -1) {
+                    perror("dup2 (input)");
+                    exit(1);
+                }
+                close(input_fd);
+            }
+
+            if (i < num_commands-1) {
+                // Redirecionar a saída para fd[1]
+                if (dup2(fd[1], 1) == -1) {
+                    perror("dup2 (output)");
+                    exit(1);
+                }
+                close(fd[1]);
+                close(fd[0]);
+            }
+
+            // Dividir o comando atual em argumentos
+            char *args[100];
+            int j = 0;
+            while ((args[j++] = strsep(&commands[i], " \n\t")) != NULL)
+                ;
+
+            for (int k = 0; args[k] != NULL; k++) {
+                printf("Argument %d: %s\n", k, args[k]);
+            }
+            // Executar o comando
+            execvp(args[0], args);
+            perror("execvp");
+            exit(1);
+        }
+
+        // Processo pai
+        if (input_fd != -1) {
+            close(input_fd);
+        }
+
+        if (i < num_commands - 1) {
+            input_fd = fd[0]; // O próximo comando usará esse como entrada
+            close(fd[1]); // O processo pai não precisa da parte de escrita do pipe
+        }
+    }
+
+    // Esperar pelos processos filhos
+    for (int i = 0; i < num_commands; i++) {
+        wait(NULL);
+    }
+
+}
+  
 
 int main (int argc, char * argv[]){
     
@@ -108,7 +200,8 @@ int main (int argc, char * argv[]){
 
                 }else if (strcmp(buff.flag, "-p")==0){
 
-                    //executechain();
+                    printf ("chegou ao execute chain\n");
+                    execute_chain(buff.args, id);
 
                 }else{
 
