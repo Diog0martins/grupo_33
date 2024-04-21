@@ -66,76 +66,111 @@ void execute_chain (char cmds[] , int id) {
         }
     }
 
-    int fd[2];
-    int input_fd = 0;
+    int pfd_seg[2];
+    pipe(pfd_seg);
+    int pfd_ant[2];
+    pipe(pfd_ant);
 
     for (int i = 0; i < num_commands; i++) {
-        if (i < num_commands-1) {
-            // Criar um pipe para o próximo comando
-            if (pipe(fd) == -1) {
-                perror("pipe");
-                exit(1);
-            }
-        }
+        
+        if (i == 0) {
+            
+            if (fork()==0)  {
 
-        // Fork para executar o comando
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("fork");
-            exit(1);
-        }
+                close(pfd_seg[0]);
+                dup2(pfd_seg[1], 1);
+                close(pfd_seg[1]);
 
-        if (pid == 0) { // Processo filho
-            if (input_fd != -1) {
-                // Redirecionar a entrada para input_fd
-                if (dup2(input_fd, 0) == -1) {
-                    perror("dup2 (input)");
-                    exit(1);
+                char* args[100];
+
+                int j=0;
+
+                char* s = commands[i];
+                while((args[j++] = strsep(&s, " \n\t")) != NULL){
+                    fprintf(stderr,":%s\n", args[j-1]);
                 }
-                close(input_fd);
-            }
 
-            if (i < num_commands-1) {
-                // Redirecionar a saída para fd[1]
-                if (dup2(fd[1], 1) == -1) {
-                    perror("dup2 (output)");
-                    exit(1);
+                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
+
+                execvp(args[0], args);
+
+                _exit(0);
+
+            }else{
+            //Aqui não pode ter wait porque senão a pipe enche
+                close(pfd_seg[1]); //certissimo  
+
+            }
+        } 
+        else if (i == num_commands-1) {
+
+            if (fork () == 0) {
+
+                dup2(pfd_seg[0], 0);
+                close(pfd_seg[0]);
+                
+                char output_name[10];
+                sprintf(output_name, "tmp/%d", id); 
+                int fd = open(output_name, O_CREAT|O_WRONLY, 0644);
+
+                dup2(fd, 1);
+                //close(pfd_seg[1]);
+
+                char* args[100];
+
+                int j=0;
+
+                char* s = commands[i];
+                while((args[j++] = strsep(&s, " \n\t")) != NULL){
+                    fprintf(stderr,":%s\n", args[j-1]);
                 }
-                close(fd[1]);
-                close(fd[0]);
+
+                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
+
+                execvp(args[0], args);
+
+                _exit(0);
+            }
+            else {
+                dup2(pfd_seg[0], 0);
+                close(pfd_seg[0]);
+            }
+        }
+        else {
+            
+            if (fork () == 0) {
+
+                dup2(pfd_seg[0], 0);
+                close(pfd_seg[0]);
+                dup2(pfd_seg[1], 1);
+                close(pfd_seg[1]);
+
+                char* args[100];
+
+                int j=0;
+
+                char* s = commands[i];
+                while((args[j++] = strsep(&s, " \n\t")) != NULL){
+                    fprintf(stderr,":%s\n", args[j-1]);
+                }
+
+                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
+
+                execvp(args[0], args);
+
+                _exit(0);
+            }
+            else {
+                dup2(pfd_seg[0], 0);
+                close(pfd_seg[0]);
             }
 
-            // Dividir o comando atual em argumentos
-            char *args[100];
-            int j = 0;
-            while ((args[j++] = strsep(&commands[i], " \n\t")) != NULL)
-                ;
-
-            for (int k = 0; args[k] != NULL; k++) {
-                printf("Argument %d: %s\n", k, args[k]);
-            }
-            // Executar o comando
-            execvp(args[0], args);
-            perror("execvp");
-            exit(1);
         }
-
-        // Processo pai
-        if (input_fd != -1) {
-            close(input_fd);
-        }
-
-        if (i < num_commands - 1) {
-            input_fd = fd[0]; // O próximo comando usará esse como entrada
-            close(fd[1]); // O processo pai não precisa da parte de escrita do pipe
+        // Esperar pelos processos filhos
+        for (int i = 0; i < num_commands; i++) {
+            wait(NULL);
         }
     }
-
-    // Esperar pelos processos filhos
-    for (int i = 0; i < num_commands; i++) {
-        wait(NULL);
-    }
-
 }
   
 
