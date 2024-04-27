@@ -1,12 +1,3 @@
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h> // for strcpy
-#include <errno.h> // for errno
-#include <sys/wait.h>
 #include "../include/defs.h"
 
 void printCmd(const Cmd *cmd) {
@@ -16,6 +7,7 @@ void printCmd(const Cmd *cmd) {
     printf("Flag: %s\n", cmd->flag);
     printf("Arguments: %s\n", cmd->args);
 }
+
 
 void execute(char cmds[], int id){
 
@@ -44,140 +36,81 @@ void execute(char cmds[], int id){
             execvp(args[0], args);
         }else{
             close(fd);
-        }
-   
+        }  
 }
 
-void execute_chain (char cmds[] , int id) {
 
-    char * commands [100];
+void execute_chain(char cmds[], int id){
+
+    char *commands[100];
     int num_commands = 0;
 
-    while((commands[num_commands] = strsep(&cmds, "|")) != NULL) {
+    // Parse commands
+    while ((commands[num_commands] = strsep(&cmds, "|")) != NULL) {
+        // Trim leading and trailing spaces from commands
+        while (isspace((unsigned char)*commands[num_commands]))
+            commands[num_commands]++;
+        if (*commands[num_commands] == 0)
+            continue;
+        char *end = commands[num_commands] + strlen(commands[num_commands]) - 1;
+        while (end > commands[num_commands] && isspace((unsigned char)*end))
+            end--;
+        end[1] = '\0';
         num_commands++;
     }
-            
-    for (int m = 0; m < num_commands; m++){
-        
-        if (commands[m][0] == ' '){
-            for (int n = 0; n < strlen(commands[m]); n++){
-                commands[m][n] = commands[m][n+1];
-            }
-        }
-    }
 
-    int pfd_seg[2];
-    pipe(pfd_seg);
-    int pfd_ant[2];
-    pipe(pfd_ant);
+    int pfd[2];
+    int prev_fd = -1;
 
     for (int i = 0; i < num_commands; i++) {
-        
-        if (i == 0) {
-            
-            if (fork()==0)  {
+        pipe(pfd);
 
-                close(pfd_seg[0]);
-                dup2(pfd_seg[1], 1);
-                close(pfd_seg[1]);
-
-                char* args[100];
-
-                int j=0;
-
-                char* s = commands[i];
-                while((args[j++] = strsep(&s, " \n\t")) != NULL){
-                    fprintf(stderr,":%s\n", args[j-1]);
-                }
-
-                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
-
-                execvp(args[0], args);
-
-                _exit(0);
-
-            }else{
-            //Aqui não pode ter wait porque senão a pipe enche
-                close(pfd_seg[1]); //certissimo  
-
+        if (fork() == 0) {
+            if (i != 0) {
+                dup2(prev_fd, 0);
+                close(prev_fd);
             }
-        } 
-        else if (i == num_commands-1) {
 
-            if (fork () == 0) {
-
-                dup2(pfd_seg[0], 0);
-                close(pfd_seg[0]);
-                
-                char output_name[10];
-                sprintf(output_name, "tmp/%d", id); 
-                int fd = open(output_name, O_CREAT|O_WRONLY, 0644);
-
+            close(pfd[0]);
+            if (i != num_commands - 1) {
+                dup2(pfd[1], 1);
+            } else {
+                char output_name[20];
+                sprintf(output_name, "tmp/%d", id);
+                int fd = open(output_name, O_CREAT | O_WRONLY, 0644);
                 dup2(fd, 1);
-                //close(pfd_seg[1]);
-
-                char* args[100];
-
-                int j=0;
-
-                char* s = commands[i];
-                while((args[j++] = strsep(&s, " \n\t")) != NULL){
-                    fprintf(stderr,":%s\n", args[j-1]);
-                }
-
-                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
-
-                execvp(args[0], args);
-
-                _exit(0);
-            }
-            else {
-                dup2(pfd_seg[0], 0);
-                close(pfd_seg[0]);
-            }
-        }
-        else {
-            
-            if (fork () == 0) {
-
-                dup2(pfd_seg[0], 0);
-                close(pfd_seg[0]);
-                dup2(pfd_seg[1], 1);
-                close(pfd_seg[1]);
-
-                char* args[100];
-
-                int j=0;
-
-                char* s = commands[i];
-                while((args[j++] = strsep(&s, " \n\t")) != NULL){
-                    fprintf(stderr,":%s\n", args[j-1]);
-                }
-
-                //fprintf(stderr,"Vou executar:%s %s %s\n", args[0], args[1], args[2]);
-
-                execvp(args[0], args);
-
-                _exit(0);
-            }
-            else {
-                dup2(pfd_seg[0], 0);
-                close(pfd_seg[0]);
+                close(pfd[1]);
             }
 
-        }
-        // Esperar pelos processos filhos
-        for (int i = 0; i < num_commands; i++) {
-            wait(NULL);
+            char *args[100];
+            int j = 0;
+            char *s = commands[i];
+            while ((args[j++] = strsep(&s, " \n\t")) != NULL);
+            execvp(args[0], args);
+            perror("execvp");
+            exit(1);
+        } else {
+            close(pfd[1]);
+            if (prev_fd != -1) {
+                close(prev_fd);
+            }
+            prev_fd = pfd[0];
         }
     }
+
+    // Wait for all child processes to finish
+    for (int i = 0; i < num_commands; i++) {
+        wait(NULL);
+    }
 }
+
   
 
 int main (int argc, char * argv[]){
     
     mkfifo("server", 0600);
     int id = 0;
+    
 
     while(1){
 
@@ -229,6 +162,9 @@ int main (int argc, char * argv[]){
 
             if (strcmp(buff.cmd, "execute")==0){
                 
+
+
+
                 if (strcmp(buff.flag, "-u")==0){
 
                     execute(buff.args,id);
@@ -240,7 +176,7 @@ int main (int argc, char * argv[]){
 
                 }else{
 
-                    //Invalid Flag
+                    perror("Invalid Flag");
                 
                 }
 
