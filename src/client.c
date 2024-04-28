@@ -38,6 +38,7 @@ int main (int argc, char* argv[]){
     }
 
 	Cmd message;
+    message.tipo = 0;
     message.pid = pid;
     strcpy(message.cmd, argv[1]);
     

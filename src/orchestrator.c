@@ -1,14 +1,5 @@
 #include "../include/defs.h"
 
-void printCmd(const Cmd *cmd) {
-    printf("PID: %d\n", cmd->pid);
-    printf("Time: %d\n", cmd->time);
-    printf("Command: %s\n", cmd->cmd);
-    printf("Flag: %s\n", cmd->flag);
-    printf("Arguments: %s\n", cmd->args);
-}
-
-
 void execute(char cmds[], int id){
 
         char* args[100];
@@ -62,7 +53,7 @@ void execute_chain(char cmds[], int id){
     int pfd[2];
     int prev_fd = -1;
 
-    for (int i = 0; i < num_commands; i++) {
+    for (int i = 0; i < num_commands; i++){
         pipe(pfd);
 
         if (fork() == 0) {
@@ -89,6 +80,7 @@ void execute_chain(char cmds[], int id){
             execvp(args[0], args);
             perror("execvp");
             exit(1);
+        
         } else {
             close(pfd[1]);
             if (prev_fd != -1) {
@@ -102,16 +94,112 @@ void execute_chain(char cmds[], int id){
     for (int i = 0; i < num_commands; i++) {
         wait(NULL);
     }
+
+    return;
+
 }
 
-  
+int prepare_execute(Cmd buff, int id){
+    
+    printf("\n");
+    printf("               //--------------------|| EXECUTE ||-----\n");
+    printf("                    Vamos agora executar Comando %d\n", id);
+    printf("\n");
 
-int main (int argc, char * argv[]){
+    if (strcmp(buff.cmd, "execute")==0){
+
+            if (strcmp(buff.flag, "-u")==0){
+
+                execute(buff.args,id);
+
+            }else if (strcmp(buff.flag, "-p")==0){
+                
+                execute_chain(buff.args, id);
+
+            }else{
+
+                perror("Invalid Flag");
+            
+            }
+
+    }else if (strcmp(buff.cmd, "status")==0){
+            /* code */
+    }else{
+            //Comando inválido
+    }
+
+    int fd = open("server", O_WRONLY);
+
+    Cmd message;
+    message.tipo = 1;
+    message.pid = 0;
+    strcpy(message.cmd, "");
+    message.time = 0;
+    strcpy(message.flag, "");
+    strcpy(message.args, "");
+
+    write(fd, &message, sizeof(Cmd));
+
+    close(fd);
+
+    printf("\n");
+    printf("               //--------------------|| CLOSE ||-----\n");
+    printf("\n");
+
+    return 0;
+
+}
+
+
+int treat_client(Cmd buff, int id, int waiting){
+    
+    
+    /*     
+    if (waiting==1)
+    {
+    printf("               Vou falar com cliente %d em espera\n", id);
+    }else{
+    printf("               Vou trabalhar com cliente %d\n", id);
+    }
+     */
+    
+    char client_name[10];
+    sprintf(client_name, "%d", buff.pid);
+    int client_fd = open(client_name, O_WRONLY);
+
+    if(client_fd == -1){
+        fprintf(stderr, "Failed to open client FIFO %s: %s\n", client_name, strerror(errno));
+        return 1; // Handle the error and continue loop
+    }
+
+    // Write to client FIFO
+    if (write(client_fd, &id, sizeof(int)) == -1) {
+        fprintf(stderr, "Failed to write to client FIFO %s: %s\n", client_name, strerror(errno));
+        close(client_fd); // Close the client FIFO
+        return 1; // Handle the error and continue loop
+    }
+
+    //------|
+
+    //-----Data Treatment Station-----
+
+    if(waiting == 0){
+        prepare_execute(buff, id);
+    }
+
+    return 0;
+}
+
+
+int main(int argc, char * argv[]){
     
     mkfifo("server", 0600);
     int id = 0;
+    Stack waiting_list;
+    initStack(&waiting_list);
+    int open_p;
+    int max_p = atoi(argv[1]);
     
-
     while(1){
 
         int fd = open("server", O_RDONLY);
@@ -120,81 +208,82 @@ int main (int argc, char * argv[]){
             return 1;
         }
 
-        printf("Abri o servidor!\n");
-
+        //printf("Abri o servidor com %d/%d processos abertos\n", open_p, max_p);
+        printStack(&waiting_list);
+        
         Cmd buff;
         int n;
 
     //----LEITURA
         while ((n = read(fd, &buff, sizeof(Cmd))) > 0){
-            
+
+        if (buff.tipo==0){
+            printf("//---------------|| CLIENTE ||---------------\\ \n");
+        }else{
+            printf("//---------------|| FILHO ||---------------\\ \n");
+        }
+        printf("//---------------|| (%d/%d)Processes ||---------------||\\ \n", open_p, max_p);
+        printf("\n");
+
             if (n <= 0){
                 perror("Failed to read from FIFO");
                 close(fd);
                 return 1;
             }
             
-            printCmd(&buff);
+            printCommand(buff);
 
-
-        //-----Open client FIFO
-
-            char client_name[10];
-            sprintf(client_name, "%d", buff.pid);
-            int client_fd = open(client_name, O_WRONLY);
-        
-            if(client_fd == -1){
-                fprintf(stderr, "Failed to open client FIFO %s: %s\n", client_name, strerror(errno));
-                continue; // Handle the error and continue loop
-            }
-
-            // Write to client FIFO
-            if (write(client_fd, &id, sizeof(int)) == -1) {
-                fprintf(stderr, "Failed to write to client FIFO %s: %s\n", client_name, strerror(errno));
-                close(client_fd); // Close the client FIFO
-                continue; // Handle the error and continue loop
-            }
-
-        //------|
-
-
-        //-----Data Treatment Station-----
-
-            if (strcmp(buff.cmd, "execute")==0){
+            if (buff.tipo == 0){ //cliente
                 
+                id++;
+                int w = 0;
+                
+                if (open_p == max_p){
+                    printf("          Está cheio, o %d vai para a kueué\n", id);
+                    w = 1;
+                    push(&waiting_list, id, buff);
+                }else{
+                    printf("          Há espaço, let's work!\n");
+                    open_p++;
+                }
 
-
-
-                if (strcmp(buff.flag, "-u")==0){
-
-                    execute(buff.args,id);
-
-                }else if (strcmp(buff.flag, "-p")==0){
-
-                    printf ("chegou ao execute chain\n");
-                    execute_chain(buff.args, id);
+                
+                if (fork() == 0){
+                    treat_client(buff, id, w);
+                    
+                    exit(1);
 
                 }else{
 
-                    perror("Invalid Flag");
-                
                 }
+A Stack não está vazia, peeked 8!
+            }else if(buff.tipo == 1){ //notificação de filho terminado
+                if (!isEmpty(&waiting_list)){
+                    int tobe_id = peekId(&waiting_list);
+                    
+                    printf("          A Stack não está vazia, peeked %d!\n", tobe_id);
+                    
+                    Cmd new_cmd = pop(&waiting_list);
+                    printCommand(new_cmd);
+                    if (fork() == 0){
+                        prepare_execute(new_cmd, tobe_id); 
 
-            }else if (strcmp(buff.cmd, "status")==0){
-                /* code */
-            }else{
-                //Comando inválido
+                        exit(1);                       
+                    }
+                    
+                }else{
+                    printf("          A Stack está vazia!\n");
+                    open_p--;
+                }
+                
             }
             
-
-            // Close the client FIFO
-            //close(client_fd);
-            id++;
-        }
-
-
-        // Close the FIFO
         close(fd);
+        printf("\n");
+        printf("//---------------|| (%d/%d)Processes ||---------------||\\ \n", open_p, max_p);
+        printf("//---------------|| CLOSED ||---------------\\ \n");
+        printf("\n");
+        }            
     }
 
     return 0;
