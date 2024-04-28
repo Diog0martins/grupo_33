@@ -256,7 +256,6 @@ int main(int argc, char * argv[]){
                 }else{
 
                 }
-A Stack não está vazia, peeked 8!
             }else if(buff.tipo == 1){ //notificação de filho terminado
                 if (!isEmpty(&waiting_list)){
                     int tobe_id = peekId(&waiting_list);
@@ -288,97 +287,3 @@ A Stack não está vazia, peeked 8!
 
     return 0;
 }
-
-/* 
-for (int i = 0; i < n; i++){
-    
-    int pfd[2]; // pfd[0] -> saída do pipe; pfd[1] -> entrada do pipe
-    pipe(pfd);
-
-    if (fork()==0){
-
-        close(pfd[0]);
-
-            write(pfd[1], &num[i], sizeof(int));
-            printf("Enviei %d\n", num[i]);
-        
-        _exit(1);
-
-    }else{
-        
-        close(pfd[1]);
-        int num;
-        printf("Estou à espera de receber\n");
-        //sleep(5);
-        while(read(pfd[0], &num, sizeof(int))>0){
-            printf("Já li o número %d\n", num);
-        }
-
-        wait(NULL);
-    }
-}
-
-Queres ter aberto 
-
-cat fich1 |
-
-filho executa
-Executa e envia para uma pipe. A pipe vai tar com dup2 para 
-
-grep "palavra" | 
-
-pai vem buscar o outpur anterior.
-
-cria um novo filho para executar 
-Tem de ir à pipe buscar o output
-
-
-wc -l 
-*/
-
-
-//--------PARSAMENTO DE STRINGS----------
-/* 
-// Procurar pela flag "-u"
-    int i;
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-u") == 0) {
-            break; // Encontramos a flag "-u", sair do loop
-        }
-    }
-
-    // Se não encontramos a flag "-u"
-    if (i == argc) {
-        printf("Flag '-u' not found.\n");
-        return 1; // Retornar 1 indica que houve um erro
-    }
-
-    // Verificar se há argumentos após a flag "-u"
-    if (i + 1 >= argc) {
-        printf("No command specified after '-u'.\n");
-        return 1; // Retornar 1 indica que houve um erro
-    }
-
-
-    printf("Flag -u em: %d\n", i);
-  
-    // Construir o comando a partir dos argumentos após a flag "-u"
-    char cmd[300] = "";
-    for (int j = i + 1; j < argc; j++){
-        printf("%s\n", argv[j]);
-        strcat(cmd, argv[j]);
-        strcat(cmd, " ");
-    }
-
-
-    // Remover o último espaço
-    cmd[strlen(cmd) - 1] = '\0';
-
-    // Chamar a função parser com o comando construído
-    char** args = parser(cmd);
-
-    // Printar os argumentos parseados
-    for (int k = 0; args[k] != NULL; k++) {
-        printf("Argument %d: %s\n", k, args[k]);
-    }
- */
