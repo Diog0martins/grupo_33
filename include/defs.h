@@ -19,50 +19,61 @@
 typedef struct command{
     int tipo; //0-cliente, 1-filho que acabou
     int pid;
-    //struct timeval initial_time;
     int time;
     char cmd[10];
     char flag[3];
     char args[300];
+    int id;
+    struct timeval reception;
 } Cmd;
 
-
 // Estrutura para um nó da pilha
-typedef struct stackNode {
+typedef struct node {
     int id;
     Cmd command;
-    struct stackNode* next;
-} StackNode;
+    struct node* next;
+} Node;
 
 
-typedef struct stack {
-    StackNode* top;
-} Stack;
-
+typedef struct list{
+    Node* top;
+    Node* last;
+} List;
 
 typedef struct registo {
-    int state;    
     int id; 
     char args[300];
+    long double duration;
 }Registo;
 
+long double time_diff(struct timeval start, struct timeval end);
 
-void initStack(Stack* stack);
+void initList(List* list);
 
-int isEmpty(Stack* stack);
+int isEmpty(List* list);
 
-StackNode* createNode(int id, Cmd command);
+Node* createNode(int id, Cmd command);
 
-void push(Stack* stack, int id, Cmd command);
+void insertInOrder(List* list, int id, Cmd command);
 
-Cmd pop(Stack* stack);
+void insertAtEnd(List* list, int id, Cmd command);
 
-int peekId(Stack* stack);
+Cmd removeFromBeginning(List* list);
 
-void destroyStack(Stack* stack);
+int peekId(List* list);
+
+void destroyList(List* list);
+
+int addElement(Registo array[], int size, Registo new);
+
+int removeElement(Registo array[], int size, int id);
+
+int isArrEmpty(Registo array[], int size);
+
+void initArray(Registo array[], int size);
 
 void printCommand(Cmd command);
 
-void printStack(Stack* stack);
+void printList(List* stack);
 
 #endif

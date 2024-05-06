@@ -120,6 +120,7 @@ int main (int argc, char * argv[]){
             return 1;
         }
 
+
         printf("Abri o servidor!\n");
 
         Cmd buff;
@@ -162,8 +163,6 @@ int main (int argc, char * argv[]){
 
             if (strcmp(buff.cmd, "execute")==0){
                 
-
-
 
                 if (strcmp(buff.flag, "-u")==0){
 
