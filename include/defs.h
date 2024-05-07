@@ -72,8 +72,4 @@ int isArrEmpty(Registo array[], int size);
 
 void initArray(Registo array[], int size);
 
-void printCommand(Cmd command);
-
-void printList(List* stack);
-
 #endif

@@ -2,26 +2,32 @@ CC = gcc
 CFLAGS = -Wall -g -Iinclude
 LDFLAGS =
 
-all: folders orchestrator client
+# Define the source and object directories
+SRC_DIR = src
+OBJ_DIR = obj
+BIN_DIR = bin
 
-orchestrator: bin/orchestrator
+# List of source files
+SRCS := $(wildcard $(SRC_DIR)/*.c)
 
-client: bin/client
+# Generate list of object files
+OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
+
+# Targets
+all: folders $(BIN_DIR)/orchestrator $(BIN_DIR)/client
 
 folders:
-	@mkdir -p src include obj bin tmp
+	@mkdir -p $(SRC_DIR) $(OBJ_DIR) $(BIN_DIR)
 
-defs.o: src/defs.c
-	$(CC) $(CFLAGS) -c $<
-
-bin/orchestrator: obj/orchestrator.o defs.o
+$(BIN_DIR)/orchestrator: $(OBJ_DIR)/orchestrator.o $(OBJ_DIR)/defs.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
-bin/client: obj/client.o
+$(BIN_DIR)/client: $(OBJ_DIR)/client.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
-obj/%.o: src/%.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f obj/* tmp/* bin/*
+	rm -rf $(OBJ_DIR)/* $(BIN_DIR)/*
+

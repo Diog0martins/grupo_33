@@ -35,6 +35,11 @@ void execute(char output_folder[], char cmds[], int id){
 
 void execute_chain(char output_folder[], char cmds[], int id){
 
+
+    char output_name[20];
+    sprintf(output_name, "%s/%d",output_folder, id);
+    int fd = open(output_name, O_CREAT | O_WRONLY, 0644);
+
     char *commands[100];
     int num_commands = 0;
 
@@ -54,6 +59,7 @@ void execute_chain(char output_folder[], char cmds[], int id){
 
     int pfd[2];
     int prev_fd = -1;
+    dup2(fd, 2);
 
     for (int i = 0; i < num_commands; i++){
         pipe(pfd);
@@ -69,9 +75,6 @@ void execute_chain(char output_folder[], char cmds[], int id){
             if(i != num_commands - 1){
                 dup2(pfd[1], 1);
             } else {
-                char output_name[20];
-                sprintf(output_name, "%s/%d",output_folder, id);
-                int fd = open(output_name, O_CREAT | O_WRONLY, 0644);
                 dup2(fd, 1);
                 close(pfd[1]);
             }
@@ -81,7 +84,7 @@ void execute_chain(char output_folder[], char cmds[], int id){
             char *s = commands[i];
             while ((args[j++] = strsep(&s, " \n\t")) != NULL);
             execvp(args[0], args);
-            perror("execvp");
+
             exit(1);
         
         } else {
@@ -98,15 +101,12 @@ void execute_chain(char output_folder[], char cmds[], int id){
         wait(NULL);
     }
 
+    close(fd);
     return;
 
 }
 
 int prepare_execute(char output_folder[], Cmd buff, int id){
-    
-    printf("\n");
-    printf("               //--------------------|| EXECUTE ||-----\n");
-    printf("                    Vamos agora executar Comando %d\n", id);
 
     if (strcmp(buff.flag, "-u")==0){
 
@@ -118,8 +118,7 @@ int prepare_execute(char output_folder[], Cmd buff, int id){
 
     }else{
 
-        perror("Invalid Flag");
-    
+        return 1;
     }
 
     int fd = open("server", O_WRONLY);
@@ -136,9 +135,6 @@ int prepare_execute(char output_folder[], Cmd buff, int id){
 
     close(fd);
 
-    printf("               //--------------------|| CLOSE ||-----\n");
-    printf("\n");
-
     return 0;
 
 }
@@ -150,49 +146,95 @@ int treat_client(char output_folder[], Cmd buff, int id, int waiting){
     sprintf(client_name, "%d", buff.pid);
     int client_fd = open(client_name, O_WRONLY);
 
-    if(client_fd == -1){
-        fprintf(stderr, "Failed to open client FIFO %s: %s\n", client_name, strerror(errno));
-        return 1; // Handle the error and continue loop
-    }
-
-    // Write to client FIFO
-    if (write(client_fd, &id, sizeof(int)) == -1) {
-        fprintf(stderr, "Failed to write to client FIFO %s: %s\n", client_name, strerror(errno));
-        close(client_fd); // Close the client FIFO
-        return 1; // Handle the error and continue loop
-    }
-
+    // Informar ao cliente o id da Task
+    write(client_fd, &id, sizeof(int));
     //------|
 
-    //-----Data Treatment Station-----
-
+    //----- Data Treatment -----
     if(waiting == 0){
         prepare_execute(output_folder, buff, id);
     }
 
+    close(client_fd);
     return 0;
 }
 
-void printRegistoArray(Registo array[], int size){
 
-    printf("+---------------------------------------------+\n");
-    printf("|          Executing Registo Elements        |\n");
-    printf("+---------------------------------------------+\n");
-    printf("| %-4s | %-10s | %-20s |\n", "ID", "Args", "Duration");
-    printf("+------+------------+----------------------+\n");
+void status(int fd, int max_p, Registo executing[max_p], List waiting_list, int pid){
 
-    for (int i = 0; i < size; i++) {
-            printf("| %-4d | %-10s | %-20Lf |\n", array[i].id, array[i].args, array[i].duration);
+    char pid_name[10];
+    sprintf(pid_name, "%d", pid);
+
+    int sts = open(pid_name, O_WRONLY);
+    int outputR = open("tmp/register", O_CREAT | O_RDONLY, 0644);
+
+    //A executar
+    if (isArrEmpty(executing, max_p)==0){
+        write(sts, "Executing:\n", 11);
+        for (int i = 0; i < max_p; i++){
+            if (executing[i].id != -1){
+                char toSend[400];
+                sprintf(toSend, "%d %s\n", executing[i].id, executing[i].args);
+                write(sts, toSend, strlen(toSend));
+            } 
+        }
+    }else{
+        write(sts, "Nothing Executing:\n", 20);
     }
 
-    printf("+---------------------------------------------+\n");
-}
+    //Em espera
+    if(!isEmpty(&waiting_list)){
 
+        Node* aux = waiting_list.top;
+        write(sts, "Scheduled:\n", 11);
+        char toSend[400];
+        while (aux != NULL){                        
+            sprintf(toSend, "%d %s\n", aux->id, aux->command.args);
+            write(sts, toSend, strlen(toSend));
+            aux = aux->next;   
+        }
+
+    }else{
+        write(sts, "Nothing Scheduled.\n", 20);
+    }
+    
+
+    //Terminadas
+    write(sts, "Completed:\n", 11);
+    Registo buff;
+    lseek(fd, 0, SEEK_SET);
+    while ((read(outputR, &buff, sizeof(Registo))) > 0){
+        if (buff.id != 0){
+            char toSend[400];
+            sprintf(toSend, "%d %s %Lf\n", buff.id, buff.args, buff.duration);
+            write(sts, toSend, strlen(toSend));
+        }
+    }
+
+    close(sts);
+    close(outputR);
+
+}
 
 int main(int argc, char * argv[]){
     
     mkfifo("server", 0600);
-    int id = 0;
+    Registo lastRegisto;
+
+    int outputR = open("tmp/register", O_CREAT | O_RDONLY, 0644);
+    off_t fileSize = lseek(outputR, 0, SEEK_END); 
+    
+    int id;
+
+    if (fileSize >= sizeof(Registo)){
+        lseek(outputR, -sizeof(Registo), SEEK_END);
+        read(outputR, &lastRegisto, sizeof(Registo));
+        id = lastRegisto.id;
+    }else{
+        id = 0;
+    } 
+    close(outputR);
+    
     int open_p = 0;
     int max_p = atoi(argv[2]);
     char politic[4]; //FCFS or SJF
@@ -203,17 +245,11 @@ int main(int argc, char * argv[]){
     Registo executing[max_p];
     initArray(executing, max_p);
     
-    //Registo executing[max_p];
-    int output = open("register", O_CREAT | O_WRONLY, 0644);
+    int output = open("tmp/register", O_CREAT | O_WRONLY, 0644);
 
     while(1){
 
         int fd = open("server", O_RDONLY);
-        if (fd == -1) {
-            perror("Failed to open servidor FIFO");
-            return 1;
-        }
-        
         Cmd buff;
         int n;
 
@@ -223,78 +259,12 @@ int main(int argc, char * argv[]){
             struct timeval start, end; 
             gettimeofday(&start, NULL);
             buff.reception = start;
-            
-            if (buff.tipo==0){
-                printf("//---------------|| CLIENTE ||---------------\\ \n");
-            }else{
-                printf("//---------------|| FILHO ||---------------\\ \n");
-            }
-
-            printf("//---------------|| (%d/%d)Processes ||---------------||\\ \n", open_p, max_p);
-            printf("\n");
-
-            
-            if (n <= 0){
-                perror("Failed to read from FIFO");
-                close(fd);
-                return 1;
-            }
-            
-            printCommand(buff);
 
             if(buff.tipo == 0){ //cliente
                 
                 if (strcmp(buff.cmd, "status")==0){
                     
-                    int sts = open("status", O_WRONLY);
-                    int outputR = open("register", O_RDONLY, 0644);
-
-                    //A executar
-                    if (isArrEmpty(executing, max_p)==0){
-                        write(sts, "Executing:\n", 11);
-                        for (int i = 0; i < max_p; i++){
-                            if (executing[i].id != -1){
-                                char toSend[400];
-                                //Registo *temp = &executing[i];
-                                sprintf(toSend, "%d %s\n", executing[i].id, executing[i].args);
-                                //printf("%s",output);
-                                write(sts, toSend, strlen(toSend));
-                            } 
-                        }
-                    }else{
-                        write(sts, "Nothing Executing:\n", 20);
-                    }
-
-                    //Em espera
-                    if(!isEmpty(&waiting_list)){
-
-                        Node* aux = waiting_list.top;
-                        write(sts, "Scheduled:\n", 11);
-                        char toSend[400];
-                        while (aux != NULL){                        
-                            sprintf(toSend, "%d %s\n", aux->id, aux->command.args);
-                            write(sts, toSend, strlen(toSend));
-                            aux = aux->next;   
-                        }
-
-                    }else{
-                        write(sts, "Nothing Scheduled.\n", 20);
-                    }
-                    
-
-                    //Terminadas
-                    write(sts, "Completed:\n", 11);
-                    Registo buff;
-                    lseek(fd, 0, SEEK_SET);
-                    while ((read(outputR, &buff, sizeof(Registo))) > 0){
-                        char toSend[400];
-                        sprintf(toSend, "%d %s %Lf\n", buff.id, buff.args, buff.duration);
-                        write(sts, toSend, strlen(toSend));
-                    }
-
-                    write(sts, "End of Stats\n", 14);
-                    close(sts);
-                    close(outputR);
+                    status(fd, max_p, executing, waiting_list, buff.pid);
 
                 }else{
 
@@ -303,13 +273,11 @@ int main(int argc, char * argv[]){
                     int w = 0;
                     
                     if (open_p == max_p){
-                        printf("          Está cheio, o %d vai para a kueué\n", id);
                         w = 1;
                         if(strcmp(politic, "FCFS")==0)insertAtEnd(&waiting_list, id, buff);
                         if(strcmp(politic, "SJF")==0)insertInOrder(&waiting_list, id, buff);
                     
                     }else{
-                        printf("          Há espaço, let's work!\n");
                         open_p++;
                     }
 
@@ -318,15 +286,14 @@ int main(int argc, char * argv[]){
                     strcpy(task.args, buff.args);
                     task.duration = 0;
                     
-                    int index = -1;
-                    if(w == 0) index = addElement(executing, max_p, task);
+                    if(w == 0) addElement(executing, max_p, task);
 
                     if (fork() == 0){
 
                         treat_client(argv[1], buff, id, w);
                         
                         if(w==0){
-                            //Registar tempo!
+                            //Registar tempo
                             gettimeofday(&end, NULL);
                             long double diff = time_diff(buff.reception, end);                       
                             task.duration = diff;
@@ -334,7 +301,6 @@ int main(int argc, char * argv[]){
                             lseek(output, (buff.id-1)*sizeof(Registo), SEEK_SET);
                             write(output, &task, sizeof(Registo));
 
-                            printf("Vindo de Cliente Acabei %d!!\n", index);
                         }
 
                         exit(1);
@@ -342,31 +308,28 @@ int main(int argc, char * argv[]){
                     }
                 }
 
-            }else if(buff.tipo == 1){ //aviso de filho terminado
+            }else if(buff.tipo == 1){ //Aviso de filho terminado
                 
                 removeElement(executing, max_p, buff.pid);
 
                 if (!isEmpty(&waiting_list)){
                     
                     int tobe_id = peekId(&waiting_list);
-                    
-                    printf("          A Stack não está vazia, peeked %d!\n", tobe_id);
-                    
+                                        
                     Cmd new_cmd = removeFromBeginning(&waiting_list);
-                    printCommand(new_cmd);
                     
                     Registo finished;
                     finished.id = new_cmd.id;
                     strcpy(finished.args, new_cmd.args);
                     finished.duration = 0;
                         
-                    int index = addElement(executing, max_p, finished);
+                    addElement(executing, max_p, finished);
 
                     if (fork() == 0){
 
                         prepare_execute(argv[1], new_cmd, tobe_id); 
 
-                        //Registar tempo!
+                        //Registar tempo
                         gettimeofday(&end, NULL);
                         long double diff = time_diff(new_cmd.reception, end);
 
@@ -375,27 +338,19 @@ int main(int argc, char * argv[]){
                         lseek(output, (new_cmd.id-1)*sizeof(Registo), SEEK_SET);
                         write(output, &finished, sizeof(Registo));
                         
-                        printf("Vindo de Filho Acabei %d!!\n", index);
                         exit(1);                       
                     }
                     
                 }else{
 
-                    printf("          A Stack está vazia!\n");
+                    //A Stack está vazia
                     open_p--;
 
                 }
                 
             }
 
-        //printRegistoArray(executing, max_p);
-        printList(&waiting_list);
-
         close(fd);
-        printf("\n");
-        printf("//---------------|| (%d/%d)Processes ||---------------||\\ \n", open_p, max_p);
-        printf("//---------------|| CLOSED ||---------------\\ \n");
-        printf("\n");
         }            
     }
 

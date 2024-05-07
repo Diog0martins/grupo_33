@@ -148,29 +148,5 @@ void initArray(Registo array[], int size) {
     }
 }
 
-// Função de exemplo para imprimir um comando
-void printCommand(Cmd command) {
-    printf("Tipo: %d, PID: %d, Time: %d\n", command.tipo, command.pid, command.time);
-    printf("Cmd: %s, Flag: %s, Args: %s\n", command.cmd, command.flag, command.args);
-}
 
-void printList(List* list) {
-    printf("+-----------------------+\n");
-    printf("|      Waiting List     |\n");
-    printf("+-----------------------+\n");
 
-    Node* current = list->top;
-    while (current != NULL){
-        printf("|  ID: %-5d  |\n", current->id);
-        printf("|  Tipo: %-3d |\n", current->command.tipo);
-        printf("|  PID: %-4d |\n", current->command.pid);
-        printf("|  Time: %-3d |\n", current->command.time);
-        printf("|  Cmd: %-9s |\n", current->command.cmd);
-        printf("|  Flag: %-3s |\n", current->command.flag);
-        printf("|  Args: %-17s |\n", current->command.args);
-        printf("+-----------------------+\n");
-        current = current->next;
-    }
-
-    printf("List End\n");
-}
